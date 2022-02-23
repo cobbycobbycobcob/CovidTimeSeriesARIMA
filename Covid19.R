@@ -230,20 +230,4 @@ predictions_3weeks <- data.frame(
   NewTests = newtests_3wk
 )
   
-predictions_3weeks 
-
-### Preliminary Evaluation
-## The forecasts seem relatively flat
-# This may be due to the long seasonality of the daily data, i.e. greater than 350 periods
-# To correct for this, we can include a seasonal dummy variable extracted from the data via fourier transformations
-# For the fourier transformation parameter k is 4, for 4 cycles, corresponding to the 4 yearly seasons in Canada
-# This has been advised by Rob Hyndman
-
-newcases_arimafourier <- auto.arima(newcases_zoo, seasonal=FALSE, xreg=fourier(newcases_zoo, 4))
-
-newcases_7mo <- round(sum(forecast1$upper[,2]),0)
-
-arima_newdeaths <- auto.arima(newdeaths_stn)
-forecast2 <- forecast(arima_newdeaths, h = 49)
-plot(forecast2)
-
+predictions_3weeks
