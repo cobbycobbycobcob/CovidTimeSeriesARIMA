@@ -39,6 +39,7 @@ library(ggplot2) # Visuals
 library(ggfortify) # Interactive visualizations
 library(plotly) # Interactive visualizations
 library(leaflet) # Maps
+library(lubridate)
 
 ### Import Data
 data_pre = read.csv('https://covid.ourworldindata.org/data/owid-covid-data.csv')
@@ -47,8 +48,6 @@ data_pre = read.csv('https://covid.ourworldindata.org/data/owid-covid-data.csv')
 data_pre <- select(data_pre, c("date", "location", "continent", "population",
                          "new_cases", "new_deaths", "new_tests",
                          "new_vaccinations"))
-
-
 
 #### Convert Character Columns to Factors
 data_pre <- as.data.frame(unclass(data_pre),
@@ -78,12 +77,14 @@ newcases_pl <- ggplot(data_pre_can, aes(x=date, y=new_cases)) +
   geom_line() + scale_x_date(date_breaks = "3 months", date_labels = "%b") +
   xlab("Months") + ylab("New Cases") + ggtitle("New Covid Cases in Canada")+geom_area(fill="lightblue", color="black") + 
   geom_smooth(method = lm, col = "red", se = FALSE)
+newcases_pl
 
 # New Deaths
 newdeaths_pl <- ggplot(data_pre_can, aes(x=date, y=new_deaths)) +
   geom_line() + scale_x_date(date_breaks = "3 months", date_labels = "%b") +
   xlab("Months") + ylab("New Deaths") + ggtitle("New Covid Deaths in Canada")+geom_area(fill="lightblue", color="black") + 
   geom_smooth(method = lm, col = "red", se = FALSE)
+newdeaths_pl
 
 # New Vaccinations
 newvax_pl <- ggplot(data_pre_can, aes(x=date, y=new_vaccinations)) +
@@ -101,50 +102,32 @@ newtests_pl <- ggplot(data_pre_can, aes(x=date, y=new_tests)) +
   geom_smooth(method = lm, col = 'red', se = FALSE)
 newtests_pl
 
-### Preliminary Data Review
-
 # None of the variables are stationary, will need to be transformed before analysis
 # The trends of Covid cases, tests, and vaccinations are increasing, while Covid deaths are decreasing
 
 ##############################################################################################################################################################
 
 #### Convert Data to Time Series Object
-### NOTE: R cannot handle more than 350 periods in a timeseries
-## Therefore, this analysis will be from the last 90 days (3 months)
-### Method 1: base ts()
-## Start takes c(year, period)
-# Here, period is a day
+### NOTE: R cannot handle more than 350 periods in a time series
+## Therefore, this analysis will be from the last 8 months
 
-# Convert Date to POSIXct class (storing time information)
-data_pre$date <- as.POSIXct(data_pre$date)
-data_ts_can <- ts(data_pre_can, 
-                  start = c(2020, strftime(data_pre_can[1, 'date'], format = "%j")), 
-                  end = c(2022, strftime(data_pre_can[length(data_pre_can$date), 'date'], format = "%j")), 
-                  frequency = 365)
+## Set the time frame
+data_timeframed <- data_pre_can %>%
+  filter(data_pre_can$date > data_pre_can[length(data_pre_can$date), 'date'] %m-% months(8), 
+         data_pre_can$date < data_pre_can[length(data_pre_can$date), 'date'])
 
-data_ts_can[is.na(data_ts_can)] <- 0
+## Create time serires as zoo objects
+newcases_zoo <- zoo(data_timeframed[ , 'new_cases'], 
+                order.by = data_timeframed$date)
 
-### Method 2: zoo()
-newcases_analysis <- data_pre_can[ , c('date', 'new_cases')]
-newcases_zoo <- zoo(newcases_analysis$new_cases, 
-                seq(from = as.Date(data_pre_can[length(data_pre_can$date), 'date']) - 90, 
-                to = as.Date(data_pre_can[length(data_pre_can$date), 'date']),
-                by = 1))
-plot(newcases_zoo)
+newdeaths_zoo <- zoo(data_timeframed[ , 'new_deaths'], 
+                    order.by = data_timeframed$date)
 
-newdeaths_analysis <- data_pre_can[ , c('date', 'new_deaths')]
-newdeaths_analysis[is.na(newdeaths_analysis)] <- 0
-newdeaths_zoo <- zoo(newdeaths_analysis$new_deaths, 
-                    seq(from = as.Date(data_pre_can[length(data_pre_can$date), 'date']) - 90, 
-                        to = as.Date(data_pre_can[length(data_pre_can$date), 'date']),
-                        by = 1))
+newtests_zoo <- zoo(data_timeframed[ , 'new_tests'], 
+                    order.by = data_timeframed$date)
 
-newvax_analysis <- data_pre_can[ , c('date', 'new_vaccinations')]
-newvax_analysis[is.na(newvax_analysis)] <- 0
-newvax_zoo <- zoo(newvax_analysis$new_vaccinations,
-                  seq(from = as.Date(data_pre_can[length(data_pre_can$date), 'date']) - 90, 
-                      to = as.Date(data_pre_can[length(data_pre_can$date), 'date']),
-                      by = 1))
+newvax_zoo <- zoo(data_timeframed[ , 'new_vaccinations'], 
+                    order.by = data_timeframed$date)
 
 ###
 ## Decompose time series into to component waveforms
@@ -164,13 +147,28 @@ can_newtests_decomp <- decompose(data_ts_can[ , 'new_tests'])
 newcases_stn <- diff(newcases_zoo)
 newdeaths_stn <- diff(newdeaths_zoo)
 newvax_stn <- diff(newvax_zoo)
+newtests_stn <- diff(newtests_zoo)
 
 ### Evaluate if data is stationary
 
 ## Visually
-plot(newcases_stn)
-plot(newdeaths_stn)
-plot(newvax_stn)
+# Blue is original
+# Red is stable
+plot.zoo(cbind(newcases_stn, newcases_zoo), 
+         plot.type = "single", 
+         col = c("red", "blue"))
+
+plot.zoo(cbind(newdeaths_stn, newdeaths_zoo),
+                             plot.type = 'single',
+                             col = c('red', 'blue'))
+
+plot.zoo(cbind(newtests_stn, newtests_zoo),
+                             plot.type = 'single',
+                             col = c('red', 'blue'))
+
+plot.zoo(cbind(newvax_stn, newvax_zoo),
+                             plot.type = 'single',
+                             col = c('red', 'blue'))
 
 ## Statistically
 # Augmented Dickey-Fuller Test.
@@ -180,19 +178,59 @@ plot(newvax_stn)
 adf.test(as.matrix(newcases_stn))
 adf.test(as.matrix(newdeaths_stn))
 adf.test(as.matrix(newvax_stn))
+adf.test(as.matrix(newvax_stn))
 
 ### Evaluate Autocorrelation within the data
 ## Given a trend, data will be correlated with itself
 ## By removing the implicit trends within data, remove the self-correlation
 acf(newcases_stn)
-pacf(newcases_stn)
 acf(newdeaths_stn)
+acf(newtests_stn)
+acf(newvax_stn)
 
+### Construct ARIMA Models
+## New Cases
 newcases_arima <- auto.arima(newcases_stn)
+## New Deaths
+newdeaths_arima <- auto.arima(newdeaths_stn)
+## New Tests
+newtests_arima <- auto.arima(newtests_stn)
+## New Vax
+newvax_arima <- auto.arima(newvax_stn)
+
+### Evaluate Models
 checkresiduals(newcases_arima)
-autoplot(forecast(newcases_arima))
-newcases_fcst <- forecast(newcases_arima, h = 7) # 7 week horizon
+checkresiduals(newdeaths_arima)
+checkresiduals(newtests_arima)
+checkresiduals(newvax_arima)
+
+### Generate & Plot Forecasts
+newcases_fcst <- forecast(newcases_arima, h = 21)
+newdeaths_fcst <- forecast(newdeaths_arima, h = 21)
+newtests_fcst <- forecast(newtests_arima, h = 21)
+newvax_fcst <- forecast(newvax_arima, h = 21)
+
 plot(newcases_fcst)
+plot(newdeaths_fcst)
+plot(newvax_fcst)
+plot(newtests_fcst)
+
+### Point Estimates
+# Cumulative amounts, i.e. sum()
+newcases_3wk <- round(sum(newcases_fcst$upper[,2]),0)
+newdeaths_3wk <- round(sum(newdeaths_fcst$upper[,2]),0)
+newtests_3wk <- round(sum(newtests_fcst$upper[,2]),0)
+newvax_3wk <- round(sum(newvax_fcst$upper[,2]),0)
+
+### Collate Results
+predictions_3weeks <- data.frame(
+  NewCases = newcases_3wk,
+  NewDeaths = newdeaths_3wk,
+  NewVaccinations = newvax_3wk,
+  NewTests = newtests_3wk
+)
+  
+predictions_3weeks 
 
 ### Preliminary Evaluation
 ## The forecasts seem relatively flat
@@ -208,109 +246,4 @@ newcases_7mo <- round(sum(forecast1$upper[,2]),0)
 arima_newdeaths <- auto.arima(newdeaths_stn)
 forecast2 <- forecast(arima_newdeaths, h = 49)
 plot(forecast2)
-
-## use auto.arima to choose ARIMA terms
-fit <- auto.arima(data_ts_can[ , 'new_cases'])
-
-checkresiduals(fit)
-
-### The model is a poor fit
-### Use a Box-Cox transformation to correct for inconsistent variance
-plot.ts(BoxCox(data_ts_can[ , 'new_cases'], 
-       lambda = BoxCox.lambda(data_ts_can[ , 'new_cases'])))
-
-## forecast for next 60 time points
-fore <- forecast(fit, h = 365)
-## plot it
-plot(fore)
-
-### Plot the Seasonal Data
-ts.stl <- stl(TS,"periodic")  # decompose the TS
-ts.sa <- seasadj(ts.stl)  # de-seasonalize
-plot(AirPassengers, type="l")  # original series
-plot(ts.sa, type="l")  # seasonal adjusted
-
-### Create Regressors
-regs <- cbind(NewDeaths = data_ts_can[ , 'new_deaths'],
-             NewTests = data_ts_can[ , 'new_tests'],
-             NewVax = data_ts_can[ , 'new_vaccinations'])
-
-### Make the ARIMA Model
-## Will allegorically determine the best model
-
-arimafit <- auto.arima(data_ts_can[ , 'new_cases'],
-                       xreg = regs)
-
-
-
-
-arimaforecast <- forecast(arimafit, xreg = regs, h = 10)
-
-plot(arimaforecast)
-
-data_xts <- xts(data_pre_can, order.by = data_pre_can$date)
-
-View(data_ts)
-#### Explore data
-covid_deaths_plt <- ggplot(data_ts, aes(date, total_deaths, color = location)) +
-  geom_point() +
-  facet_grid(facet = vars(continent), color ~ location) +
-  theme(legend.position = "none")
-
-covid_deaths_intplt <- ggplotly(covid_deaths_plt)
-covid_deaths_intplt
-covid_deaths_plt
-
-### Declare Time Series 1
-CovidDeaths_can <- ts(data2_canada$total_deaths, start = c(2020,2), frequency = 365)
-CovidDeaths_can
-
-#### Plot the Data: Total Deaths in Canada Over Time
-
-autoplot(CovidDeaths_can) +
-  ggtitle('COVID-19 Deaths in Canada (Feb 2020 - Feb 2022)') +
-  ylab('Covid-19 Deaths')
-
-#### NOTE:
-#### As Total Deaths entails a positive trend, investigate transformations for stationary data
-
-#### Transformations
-
-#### Differences
-#### Take the first difference of the data
-#### Differencing a time series means, to subtract each data point in the series from its successor.
-#### The first difference is the change in data over the unit of frequency
-#### In this case, the increase in total deaths each day
-CovidDeaths_can_diff <- diff(CovidDeaths_can)
-
-#### Plot the Data: Daily Change in Covid-19 Deaths in Canada
-autoplot(CovidDeaths_can_diff) +
-  ggtitle('Daily Change COVID-19 Deaths in Canada (Feb 2020 - Feb 2022)') +
-  ylab('Covid-19 Deaths')
-
-#### The series appears trend stationary, and can be used to investigate seasonality
-#### Use Augmented Dickey-Fuller Test (adf test). A p-Value of less than 0.05 in adf.test() indicates that it is stationary.
-adf.test(na.omit(CovidDeaths_can_stn))
-## ADF p-value = 0.6557
-## The data is not stationary. Investigate further.
-
-#### Make the data stationary; Another method:
-ndiffs(CovidDeaths_can)  # number for seasonal differencing needed
-# Number of differences = 2
-CovidDeaths_can_stn <- diff(CovidDeaths_can, differences = 2)
-plot(CovidDeaths_can_stn, type="l", main="Covid Deaths Stationary (d=2)")
-
-#### Seasonality
-ggseasonplot(diff_Y_can)
-### There appear to be seasonal patterns to the data
-### Such that there is a yearly rise in the daily change of total deaths in Nov-Dec 
-### which briefly dips in the 2-3 quarter of the year
-
-### Plot the daily change across years
-ggsubseriesplot(diff_Y_can)
-
-### Declare Time Series 2
-covid_newdeaths_can <- xts(x = data2_canada$new_deaths, order.by = data2_canada$date, frequency = 365)
-
-plot(covid_newdeaths_can)
 
